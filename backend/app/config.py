@@ -6,13 +6,18 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    # LLM
+    # LLM — Anthropic (primary)
     anthropic_api_key: str = ""
-    openrouter_api_key: str = ""
     llm_heavy: str = "claude-opus-4-7"
-    llm_light: str = "claude-haiku-4-5-20251001"
     llm_mid: str = "claude-sonnet-4-6"
+    llm_light: str = "claude-haiku-4-5-20251001"
     llm_budget_default: float = 5.00
+
+    # LLM — OpenRouter (free fallback)
+    openrouter_api_key: str = ""
+    openrouter_model_heavy: str = "deepseek/deepseek-r1-distill-qwen-32b:free"
+    openrouter_model_mid: str = "mistralai/mistral-small-3.1-24b-instruct:free"
+    openrouter_model_light: str = "google/gemma-3-27b-it:free"
 
     # Crypto
     fernet_key: str = ""

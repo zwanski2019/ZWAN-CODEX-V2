@@ -10,6 +10,7 @@ from app.api import engagements as engagements_router
 from app.api import findings as findings_router
 from app.api import loot as loot_router
 from app.api import system as system_router
+from app.api import settings_api as settings_router
 from app.config import settings
 from app.db.base import engine
 from app.db.models import Base
@@ -46,6 +47,7 @@ app.include_router(engagements_router.router, prefix="/api")
 app.include_router(findings_router.router, prefix="/api")
 app.include_router(agents_router.router, prefix="/api")
 app.include_router(loot_router.router, prefix="/api")
+app.include_router(settings_router.router, prefix="/api")
 app.include_router(system_router.router)
 
 

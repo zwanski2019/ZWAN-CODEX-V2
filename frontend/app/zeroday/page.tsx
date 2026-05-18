@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type Engagement, type Finding } from "@/lib/api";
+import { Nav } from "@/components/nav";
 import { cn } from "@/lib/utils";
 import {
   Zap,
@@ -249,7 +250,9 @@ export default function ZeroDayPage() {
   const highCount = findings.filter((f) => f.severity === "high").length;
 
   return (
-    <div className="p-6 max-w-5xl">
+    <div className="flex min-h-screen">
+      <Nav />
+      <main className="ml-56 flex-1 p-6 max-w-5xl">
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
         <div className="p-2 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
@@ -377,6 +380,7 @@ export default function ZeroDayPage() {
           )}
         </div>
       </div>
+      </main>
     </div>
   );
 }

@@ -147,3 +147,13 @@ class Secret(Base):
     context: Mapped[str] = mapped_column(Text, nullable=False, default="")
     meta: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class AppSetting(Base):
+    """Persistent key-value settings store. Sensitive values are Fernet-encrypted."""
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    is_sensitive: Mapped[bool] = mapped_column(nullable=False, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

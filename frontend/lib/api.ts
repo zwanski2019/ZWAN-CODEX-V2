@@ -93,6 +93,25 @@ export const api = {
   },
 };
 
+export interface AppSetting {
+  key: string;
+  value: string;
+  raw_set: boolean;
+  section: string;
+  label: string;
+  sensitive: boolean;
+  desc: string;
+}
+
+export const settingsApi = {
+  list: () => req<AppSetting[]>("/api/settings/"),
+  save: (updates: Record<string, string>) =>
+    req<{ saved: string[]; restart_required: string[] }>("/api/settings/", {
+      method: "PUT",
+      body: JSON.stringify({ updates }),
+    }),
+};
+
 export function createWS(engagementId: string): WebSocket {
   return new WebSocket(`${WS_BASE}/ws/${engagementId}`);
 }
