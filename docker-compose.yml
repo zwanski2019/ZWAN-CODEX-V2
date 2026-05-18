@@ -109,8 +109,19 @@ services:
       backend:
         condition: service_healthy
 
+  proxy:
+    image: mitmproxy/mitmproxy:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"   # proxy port
+      - "127.0.0.1:8081:8081"   # mitmweb UI
+    command: mitmweb --web-host 0.0.0.0 --web-port 8081 --listen-port 8080
+    volumes:
+      - proxy_data:/home/mitmproxy/.mitmproxy
+
 volumes:
   postgres_data:
   redis_data:
   qdrant_data:
   work_dir:
+  proxy_data:
