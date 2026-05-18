@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db.base import get_db
 from app.db.models import Engagement, Platform
 
@@ -68,3 +69,22 @@ async def get_engagement(
     if not eng:
         raise HTTPException(status_code=404, detail="Engagement not found")
     return eng
+
+
+@router.post("/{engagement_id}/agents/zeroday")
+async def start_zeroday_scan(
+    engagement_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Enqueue just the ZeroDayScannerAgent for a targeted zero-day scan."""
+    eng = await db.get(Engagement, engagement_id)
+    if not eng:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    from arq import create_pool
+    from arq.connections import RedisSettings
+
+    pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+    await pool.enqueue_job("run_single_agent", engagement_id, "zeroday_scanner")
+    await pool.aclose()
+    return {"queued": True, "engagement_id": engagement_id, "agent": "zeroday_scanner"}

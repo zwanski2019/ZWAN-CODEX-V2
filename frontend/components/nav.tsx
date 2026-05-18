@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, Target, Cpu, Search, Settings } from "lucide-react";
+import { LayoutDashboard, Target, Cpu, Search, Settings, Zap } from "lucide-react";
 import { SystemBar } from "@/components/system-bar";
 
 const links = [
@@ -10,6 +10,7 @@ const links = [
   { href: "/engagements", label: "Engagements", icon: Target },
   { href: "/agents", label: "Agents", icon: Cpu },
   { href: "/loot", label: "Loot", icon: Search },
+  { href: "/zeroday", label: "Zero-Day", icon: Zap },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

@@ -26,6 +26,7 @@ import app.agents.agentic_target  # noqa: F401
 import app.agents.chain_hunter  # noqa: F401
 import app.agents.validator  # noqa: F401
 import app.agents.report  # noqa: F401
+import app.agents.zeroday_scanner  # noqa: F401
 
 app = FastAPI(
     title="ZWAN-CODEX-V2",

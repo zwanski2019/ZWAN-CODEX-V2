@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import uuid
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import AgentRun, AgentStatus, Engagement
@@ -29,14 +29,20 @@ class BaseAgent(ABC):
         self._trace: list[dict] = []
 
     async def _init_run(self) -> None:
+        run_id = str(uuid.uuid4())
         self._run = AgentRun(
-            id=str(uuid.uuid4()),
+            id=run_id,
             engagement_id=self.engagement.id,
             agent_name=self.name,
             status=AgentStatus.RUNNING,
-            started_at=datetime.now(timezone.utc),
         )
         self.db.add(self._run)
+        await self.db.flush()
+        # Set started_at via DB to avoid timezone-naive/aware conflicts
+        await self.db.execute(
+            text("UPDATE agent_runs SET started_at = now() WHERE id = :id"),
+            {"id": run_id},
+        )
         await self.db.commit()
 
     async def _emit(self, event_type: str, data: Any) -> None:
@@ -51,8 +57,12 @@ class BaseAgent(ABC):
         self._run.output_data = output
         self._run.trace = self._trace
         self._run.error = error
-        self._run.finished_at = datetime.now(timezone.utc)
         self._run.llm_cost_usd = self.llm.spent
+        await self.db.flush()
+        await self.db.execute(
+            text("UPDATE agent_runs SET finished_at = now() WHERE id = :id"),
+            {"id": self._run.id},
+        )
         await self.db.commit()
 
     async def run(self) -> dict:

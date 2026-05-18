@@ -36,6 +36,8 @@ export interface Finding {
   report_md: string;
   validator_reasoning: string;
   dup_similarity: number | null;
+  http_transcript: string;
+  meta: Record<string, string>;
 }
 
 export interface AgentRun {
@@ -71,6 +73,13 @@ export const api = {
       const qs = engagement_id ? `?engagement_id=${engagement_id}` : "";
       return req<AgentRun[]>(`/api/agents/runs${qs}`);
     },
+  },
+  zeroday: {
+    startScan: (engagement_id: string) =>
+      req<{ queued: boolean; engagement_id: string; agent: string }>(
+        `/api/engagements/${engagement_id}/agents/zeroday`,
+        { method: "POST" }
+      ),
   },
   loot: {
     assets: (engagement_id?: string) => {
