@@ -23,6 +23,10 @@ node_modules/
 *.sqlite
 work/
 
+# Runtime
+.pids/
+.logs/
+
 # IDE
 .vscode/
 .idea/

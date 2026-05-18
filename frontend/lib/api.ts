@@ -87,3 +87,7 @@ export const api = {
 export function createWS(engagementId: string): WebSocket {
   return new WebSocket(`${WS_BASE}/ws/${engagementId}`);
 }
+
+export function rawReq<T = unknown>(path: string, init?: RequestInit): Promise<T> {
+  return req<T>(path, init);
+}
