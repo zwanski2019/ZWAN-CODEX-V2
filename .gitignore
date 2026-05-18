@@ -1,0 +1,29 @@
+.env
+*.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+dist/
+.pytest_cache/
+
+# Node
+node_modules/
+.next/
+.pnpm-store/
+
+# Data
+*.db
+*.sqlite
+work/
+
+# IDE
+.vscode/
+.idea/
+*.swp
