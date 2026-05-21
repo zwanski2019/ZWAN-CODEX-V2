@@ -147,6 +147,9 @@ export default function ConsolePage() {
   const [browserFrame, setBrowserFrame] = useState<{ url: string; png_b64: string } | null>(null);
   const [caidoAlive, setCaidoAlive] = useState<boolean | null>(null);
   const [caidoHasKey, setCaidoHasKey] = useState(false);
+  const [caidoLoginInfo, setCaidoLoginInfo] = useState<{
+    userCode: string; verificationUrl: string; expiresAt: string;
+  } | null>(null);
   const [quickTarget, setQuickTarget] = useState("");
   const wsRef = useRef<WebSocket | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -168,15 +171,19 @@ export default function ConsolePage() {
     if (t) setQuickTarget(t);
   }, [scope]);
 
-  // Poll Caido status every 30 s
+  // Poll Caido status every 10 s (faster while login is pending)
   useEffect(() => {
     const check = () =>
       fetch(`${AGENT_HTTP}/api/caido/status`)
         .then((r) => r.json())
-        .then((d) => { setCaidoAlive(d.alive); setCaidoHasKey(d.has_key); })
+        .then((d) => {
+          setCaidoAlive(d.alive);
+          setCaidoHasKey(d.has_key);
+          if (d.has_key) setCaidoLoginInfo(null); // auth complete — clear the prompt
+        })
         .catch(() => setCaidoAlive(false));
     check();
-    const id = setInterval(check, 30_000);
+    const id = setInterval(check, 10_000);
     return () => clearInterval(id);
   }, []);
 
@@ -347,6 +354,19 @@ export default function ConsolePage() {
     addLog("sys", `Dry-run ${next ? "ON" : "OFF"}`);
   }, [dryRun, sendMsg, addLog]);
 
+  const startCaidoLogin = useCallback(async () => {
+    setCaidoLoginInfo(null);
+    try {
+      const r = await fetch(`${AGENT_HTTP}/api/caido/login`, { method: "POST" });
+      const d = await r.json();
+      if (d.error) { addLog("err", `[CAIDO] ${d.error}`); return; }
+      setCaidoLoginInfo({ userCode: d.userCode, verificationUrl: d.verificationUrl, expiresAt: d.expiresAt });
+      addLog("sys", `[CAIDO] Visit ${d.verificationUrl} — code: ${d.userCode}`);
+    } catch (e) {
+      addLog("err", `[CAIDO] Login failed: ${e}`);
+    }
+  }, [addLog]);
+
   const isConnected = connState !== "disconnected" && connState !== "connecting";
   const isRunning = connState === "running";
 
@@ -412,6 +432,51 @@ export default function ConsolePage() {
                 >
                   <WifiOff size={11} /> Disconnect
                 </button>
+              </div>
+
+              {/* Caido auth row */}
+              <div className="mt-2 pt-2 border-t border-amber-400/10">
+                <div className="flex items-center gap-2">
+                  <span className={cn(
+                    "text-[9px] uppercase tracking-widest flex items-center gap-1",
+                    caidoAlive && caidoHasKey ? "text-green-400" :
+                    caidoAlive ? "text-yellow-400" : "text-zinc-600"
+                  )}>
+                    <span className={cn(
+                      "w-1.5 h-1.5 rounded-full",
+                      caidoAlive && caidoHasKey ? "bg-green-400 animate-pulse" :
+                      caidoAlive ? "bg-yellow-400" : "bg-zinc-700"
+                    )} />
+                    Caido {caidoAlive && caidoHasKey ? "ready" : caidoAlive ? "no auth" : "offline"}
+                  </span>
+                  {caidoAlive && !caidoHasKey && (
+                    <button
+                      onClick={startCaidoLogin}
+                      className="ml-auto text-[9px] px-2 py-0.5 rounded border border-amber-400/30 text-amber-400 hover:bg-amber-400/10 transition-colors uppercase tracking-widest"
+                    >
+                      Login →
+                    </button>
+                  )}
+                </div>
+
+                {/* Pending auth approval */}
+                {caidoLoginInfo && (
+                  <div className="mt-2 bg-black border border-amber-400/20 rounded p-2 text-[10px]">
+                    <p className="text-amber-400/70 mb-1">Open this URL and approve:</p>
+                    <a
+                      href={caidoLoginInfo.verificationUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-amber-300 underline break-all block mb-1"
+                    >
+                      {caidoLoginInfo.verificationUrl}
+                    </a>
+                    <p className="text-amber-400/50">
+                      Code: <span className="text-amber-300 font-bold tracking-wider">{caidoLoginInfo.userCode}</span>
+                    </p>
+                    <p className="text-amber-400/30 mt-1">Waiting for approval…</p>
+                  </div>
+                )}
               </div>
             </div>
 

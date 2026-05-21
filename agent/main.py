@@ -743,8 +743,38 @@ async def caido_status() -> dict:
     return {
         "alive": alive,
         "url": caido_mod.CAIDO_URL,
-        "has_key": bool(caido_mod.CAIDO_API_KEY),
+        "has_key": bool(caido_mod._active_token()),
         "proxy": caido_mod.CAIDO_PROXY or None,
+    }
+
+
+@app.post("/api/caido/login")
+async def caido_login() -> dict:
+    """
+    Start the Caido device-code auth flow.
+    Returns the verificationUrl and userCode for the user to approve.
+    A background task subscribes to the GQL WebSocket and caches the token when approved.
+    """
+    try:
+        req = await caido_mod.start_device_flow()
+    except Exception as exc:
+        return {"error": str(exc)}
+
+    request_id = req.get("id", "")
+    if not request_id:
+        return {"error": "Caido did not return a request ID"}
+
+    async def _on_token(access: str, refresh: str) -> None:
+        # Token is already stored in caido_mod._cached_token by wait_for_token
+        pass
+
+    asyncio.create_task(caido_mod.wait_for_token(request_id, _on_token))
+
+    return {
+        "requestId": request_id,
+        "userCode": req.get("userCode"),
+        "verificationUrl": req.get("verificationUrl"),
+        "expiresAt": req.get("expiresAt"),
     }
 
 
