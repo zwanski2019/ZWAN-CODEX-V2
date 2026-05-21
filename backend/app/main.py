@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -37,7 +38,10 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[
+        "http://localhost:3000", "http://127.0.0.1:3000",
+        "http://localhost:3001", "http://127.0.0.1:3001",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -53,14 +57,26 @@ app.include_router(system_router.router)
 
 @app.on_event("startup")
 async def on_startup() -> None:
-    # Auto-create tables if Alembic hasn't run yet (dev convenience)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    # Start Redis → WebSocket relay in background
+    asyncio.create_task(manager.start_subscriber())
 
 
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok", "version": "2.0.0"}
+
+
+@app.websocket("/ws/global")
+async def ws_global(websocket: WebSocket) -> None:
+    """Global event bus — receives all agent events across all engagements."""
+    await manager.connect("_global", websocket)
+    try:
+        while True:
+            await websocket.receive_text()  # keep-alive; clients send nothing meaningful
+    except WebSocketDisconnect:
+        manager.disconnect("_global", websocket)
 
 
 @app.websocket("/ws/{engagement_id}")
@@ -70,7 +86,6 @@ async def ws_engagement(websocket: WebSocket, engagement_id: str) -> None:
         while True:
             raw = await websocket.receive_text()
             data = json.loads(raw)
-            # Echo back with type=echo for M1 verification
             await websocket.send_text(json.dumps({"type": "echo", "data": data}))
     except WebSocketDisconnect:
         manager.disconnect(engagement_id, websocket)

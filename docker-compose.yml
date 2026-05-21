@@ -3,7 +3,7 @@ services:
     image: pgvector/pgvector:pg16
     restart: unless-stopped
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:5433:5432"
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-zwan}
       POSTGRES_USER: ${POSTGRES_USER:-zwan}
@@ -20,7 +20,7 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "127.0.0.1:6379:6379"
+      - "127.0.0.1:6380:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -33,12 +33,12 @@ services:
     image: qdrant/qdrant:latest
     restart: unless-stopped
     ports:
-      - "127.0.0.1:6333:6333"
-      - "127.0.0.1:6334:6334"
+      - "127.0.0.1:6335:6333"
+      - "127.0.0.1:6336:6334"
     volumes:
       - qdrant_data:/qdrant/storage
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:6333/readyz || exit 1"]
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/localhost/6333' || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -113,7 +113,7 @@ services:
     image: mitmproxy/mitmproxy:latest
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8080:8080"   # proxy port
+      - "127.0.0.1:8082:8080"   # proxy port
       - "127.0.0.1:8081:8081"   # mitmweb UI
     command: mitmweb --web-host 0.0.0.0 --web-port 8081 --listen-port 8080
     volumes:

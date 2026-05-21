@@ -1,0 +1,15 @@
+program: my-ctf-lab
+in_scope:
+  domains:
+    - "*.lab.local"
+    - "box.lab.local"
+  ips:
+    - "10.10.0.0/24"
+out_of_scope:
+  domains:
+    - "admin.lab.local"
+  ips:
+    - "10.10.0.5/32"
+rate:
+  max_concurrent: 10
+  requests_per_sec: 50

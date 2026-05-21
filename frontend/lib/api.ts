@@ -49,6 +49,14 @@ export interface AgentRun {
   llm_tokens_out: number;
   llm_cost_usd: number;
   error: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+}
+
+export interface AgentRunDetail extends AgentRun {
+  output_data: Record<string, unknown>;
+  trace: Array<Record<string, unknown>>;
 }
 
 export const api = {
@@ -73,6 +81,7 @@ export const api = {
       const qs = engagement_id ? `?engagement_id=${engagement_id}` : "";
       return req<AgentRun[]>(`/api/agents/runs${qs}`);
     },
+    getRun: (id: string) => req<AgentRunDetail>(`/api/agents/runs/${id}`),
   },
   zeroday: {
     startScan: (engagement_id: string) =>

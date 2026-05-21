@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +23,17 @@ class AgentRunOut(BaseModel):
     llm_tokens_out: int
     llm_cost_usd: float
     error: str | None
+    started_at: datetime | None
+    finished_at: datetime | None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AgentRunDetail(AgentRunOut):
+    output_data: dict
+    trace: list
 
     class Config:
         from_attributes = True
@@ -37,3 +49,12 @@ async def list_runs(
         q = q.where(AgentRun.engagement_id == engagement_id)
     result = await db.execute(q.order_by(AgentRun.created_at.desc()).limit(200))
     return list(result.scalars().all())
+
+
+@router.get("/runs/{run_id}", response_model=AgentRunDetail)
+async def get_run(run_id: str, db: AsyncSession = Depends(get_db)) -> AgentRun:
+    result = await db.execute(select(AgentRun).where(AgentRun.id == run_id))
+    run = result.scalar_one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return run

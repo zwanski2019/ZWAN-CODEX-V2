@@ -11,6 +11,7 @@ from app.db.models import Engagement
 from app.llm.router import LLMRouter
 from app.ws.manager import manager
 
+
 AGENT_REGISTRY: dict[str, type] = {}
 
 
@@ -19,7 +20,23 @@ def register_agent(cls: type) -> type:
     return cls
 
 
+def _load_agents() -> None:
+    """Import all agent modules so they self-register. Called lazily to avoid circular imports."""
+    import app.agents.recon          # noqa: F401
+    import app.agents.js_miner       # noqa: F401
+    import app.agents.oauth_chain    # noqa: F401
+    import app.agents.desync         # noqa: F401
+    import app.agents.race           # noqa: F401
+    import app.agents.ssrf           # noqa: F401
+    import app.agents.agentic_target # noqa: F401
+    import app.agents.chain_hunter   # noqa: F401
+    import app.agents.validator      # noqa: F401
+    import app.agents.report         # noqa: F401
+    import app.agents.zeroday_scanner # noqa: F401
+
+
 async def run_engagement(engagement: Engagement, db: AsyncSession) -> None:
+    _load_agents()
     llm = LLMRouter(
         engagement_id=engagement.id,
         budget_usd=engagement.llm_budget_usd,

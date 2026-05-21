@@ -60,6 +60,18 @@ async def list_engagements(db: Annotated[AsyncSession, Depends(get_db)]) -> list
     return list(result.scalars().all())
 
 
+@router.delete("/{engagement_id}", status_code=204)
+async def delete_engagement(
+    engagement_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    eng = await db.get(Engagement, engagement_id)
+    if not eng:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+    await db.delete(eng)
+    await db.commit()
+
+
 @router.get("/{engagement_id}", response_model=EngagementOut)
 async def get_engagement(
     engagement_id: str,
