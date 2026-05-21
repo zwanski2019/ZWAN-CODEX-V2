@@ -11,15 +11,93 @@ import {
   Square,
   AlertTriangle,
   CheckCircle2,
-  Clock,
   Shield,
   Zap,
-  ChevronDown,
   FlipHorizontal,
   Globe,
+  Target,
+  Code2,
+  Key,
+  Radio,
+  Database,
+  ScanLine,
 } from "lucide-react";
 
 const AGENT_WS = process.env.NEXT_PUBLIC_AGENT_WS ?? "ws://127.0.0.1:8788/ws";
+const AGENT_HTTP = process.env.NEXT_PUBLIC_AGENT_HTTP ?? "http://127.0.0.1:8788";
+
+// ── Quick-action preset workflows ────────────────────────────────────────────
+
+function extractTarget(scopeYaml: string): string {
+  const m = scopeYaml.match(/domains[^:]*:[^[\n]*(?:\[["']?|-)["']?\*?\.?([a-zA-Z0-9][a-zA-Z0-9._-]+)/);
+  return m ? m[1] : "";
+}
+
+const PRESETS = [
+  {
+    label: "Full Recon",
+    icon: Target,
+    color: "text-cyan-400 border-cyan-400/30 hover:bg-cyan-400/10",
+    goal: (t: string) =>
+      `Enumerate all subdomains of ${t} with subfinder and amass. Probe live hosts with httpx. Run nuclei recon templates on discovered services. Screenshot interesting endpoints.`,
+  },
+  {
+    label: "JS Mine",
+    icon: Code2,
+    color: "text-yellow-400 border-yellow-400/30 hover:bg-yellow-400/10",
+    goal: (t: string) =>
+      `Crawl ${t} with katana depth 3, collect all URLs with gau. Download every JavaScript file and mine for hardcoded API keys, tokens, secrets, Sentry DSNs, and hidden API endpoints.`,
+  },
+  {
+    label: "OAuth Hunt",
+    icon: Key,
+    color: "text-purple-400 border-purple-400/30 hover:bg-purple-400/10",
+    goal: (t: string) =>
+      `Find all OAuth 2.0 and OIDC endpoints on ${t}. Test for PKCE stripping, redirect_uri bypass with double-encoded fragments (%2523), state fixation, and dynamic client registration abuse.`,
+  },
+  {
+    label: "SSRF Probe",
+    icon: Globe,
+    color: "text-pink-400 border-pink-400/30 hover:bg-pink-400/10",
+    goal: (t: string) =>
+      `Find all URL parameters on ${t} that accept external URLs: webhook, redirect, url, src, href, path. Test each for SSRF. Target PDF generators, image processors, and webhook relay endpoints.`,
+  },
+  {
+    label: "Race Conds",
+    icon: Zap,
+    color: "text-orange-400 border-orange-400/30 hover:bg-orange-400/10",
+    goal: (t: string) =>
+      `Find financial, payment, transfer, withdrawal, and coupon endpoints on ${t}. Test for race conditions on state-changing operations that should execute only once. Focus on balance and limit checks.`,
+  },
+  {
+    label: "Nuclei High",
+    icon: Shield,
+    color: "text-red-400 border-red-400/30 hover:bg-red-400/10",
+    goal: (t: string) =>
+      `Run nuclei against ${t} with high and critical severity templates only. Focus on CVEs from the last 12 months, auth bypass, and technology-specific exploits. Use caido_create_finding for confirmed hits.`,
+  },
+  {
+    label: "Desync",
+    icon: Radio,
+    color: "text-rose-400 border-rose-400/30 hover:bg-rose-400/10",
+    goal: (t: string) =>
+      `Test ${t} for HTTP request smuggling: CL.0, H2.CL, 0.CL, and client-side desync. Use differential response analysis. Route through Caido proxy to capture all raw requests for evidence.`,
+  },
+  {
+    label: "Caido Review",
+    icon: Database,
+    color: "text-amber-400 border-amber-400/30 hover:bg-amber-400/10",
+    goal: (t: string) =>
+      `Pull HTTP history from Caido for ${t} using caido_history. Identify 10 most interesting endpoints by auth patterns and parameter anomalies. Use caido_create_finding for any confirmed vulnerabilities.`,
+  },
+  {
+    label: "Scope Scan",
+    icon: ScanLine,
+    color: "text-green-400 border-green-400/30 hover:bg-green-400/10",
+    goal: (t: string) =>
+      `Full scope scan of ${t}: port scan with naabu, TLS inspection with tlsx, technology fingerprint with whatweb, DNS records with dnsx. Build a complete attack surface map before any exploitation.`,
+  },
+];
 
 type ConnState = "disconnected" | "connecting" | "auth_pending" | "ready" | "running";
 type Mode = "manual" | "auto" | "yolo";
@@ -67,6 +145,9 @@ export default function ConsolePage() {
   const [itersLeft, setItersLeft] = useState(25);
   const [budgetSec, setBudgetSec] = useState(1800);
   const [browserFrame, setBrowserFrame] = useState<{ url: string; png_b64: string } | null>(null);
+  const [caidoAlive, setCaidoAlive] = useState<boolean | null>(null);
+  const [caidoHasKey, setCaidoHasKey] = useState(false);
+  const [quickTarget, setQuickTarget] = useState("");
   const wsRef = useRef<WebSocket | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -80,6 +161,24 @@ export default function ConsolePage() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [log.length]);
+
+  // Auto-extract first domain from scope YAML into the quick-target field
+  useEffect(() => {
+    const t = extractTarget(scope);
+    if (t) setQuickTarget(t);
+  }, [scope]);
+
+  // Poll Caido status every 30 s
+  useEffect(() => {
+    const check = () =>
+      fetch(`${AGENT_HTTP}/api/caido/status`)
+        .then((r) => r.json())
+        .then((d) => { setCaidoAlive(d.alive); setCaidoHasKey(d.has_key); })
+        .catch(() => setCaidoAlive(false));
+    check();
+    const id = setInterval(check, 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   const connect = useCallback(() => {
     if (wsRef.current) {
@@ -285,7 +384,7 @@ export default function ConsolePage() {
 
         <div className="flex gap-4 flex-1 min-h-0">
           {/* Left panel: config */}
-          <div className="w-72 shrink-0 flex flex-col gap-3">
+          <div className="w-72 shrink-0 flex flex-col gap-3 overflow-y-auto">
 
             {/* Connection */}
             <div className="border border-amber-400/20 rounded p-3 bg-zinc-950">
@@ -429,6 +528,76 @@ export default function ConsolePage() {
                     />
                   </div>
                 </div>
+              </div>
+            </div>
+
+            {/* Quick Actions */}
+            <div className="border border-amber-400/20 rounded p-3 bg-zinc-950">
+              {/* Header row: title + Caido status */}
+              <div className="flex items-center gap-2 mb-2">
+                <p className="text-amber-400/60 text-[10px] uppercase tracking-widest flex-1">
+                  Quick Actions
+                </p>
+                <span
+                  className={cn(
+                    "flex items-center gap-1 text-[9px] uppercase tracking-widest px-1.5 py-0.5 rounded border",
+                    caidoAlive === null
+                      ? "border-zinc-700 text-zinc-600"
+                      : caidoAlive && caidoHasKey
+                      ? "border-green-500/40 text-green-400 bg-green-500/5"
+                      : caidoAlive
+                      ? "border-yellow-500/40 text-yellow-400 bg-yellow-500/5"
+                      : "border-red-700/40 text-red-500"
+                  )}
+                  title={
+                    caidoAlive && caidoHasKey
+                      ? "Caido online + API key set"
+                      : caidoAlive
+                      ? "Caido running but CAIDO_API_KEY not set"
+                      : "Caido not reachable"
+                  }
+                >
+                  <span
+                    className={cn(
+                      "w-1.5 h-1.5 rounded-full",
+                      caidoAlive === null ? "bg-zinc-600" :
+                      caidoAlive && caidoHasKey ? "bg-green-400 animate-pulse" :
+                      caidoAlive ? "bg-yellow-400" : "bg-red-500"
+                    )}
+                  />
+                  Caido
+                </span>
+              </div>
+
+              {/* Target input */}
+              <input
+                type="text"
+                placeholder="target domain (auto-fills from scope)"
+                value={quickTarget}
+                onChange={(e) => setQuickTarget(e.target.value)}
+                className="w-full bg-black border border-amber-400/20 rounded px-2 py-1 text-amber-300 text-xs focus:outline-none focus:border-amber-400/50 placeholder:text-amber-400/20 mb-2"
+              />
+
+              {/* Preset buttons grid */}
+              <div className="grid grid-cols-3 gap-1">
+                {PRESETS.map(({ label, icon: Icon, color, goal: g }) => (
+                  <button
+                    key={label}
+                    disabled={isRunning}
+                    onClick={() => {
+                      const t = quickTarget || "TARGET";
+                      setGoal(g(t));
+                    }}
+                    className={cn(
+                      "flex flex-col items-center gap-0.5 py-1.5 rounded border text-[9px] uppercase tracking-wider transition-colors disabled:opacity-30",
+                      color
+                    )}
+                    title={g(quickTarget || "TARGET")}
+                  >
+                    <Icon size={12} />
+                    {label}
+                  </button>
+                ))}
               </div>
             </div>
           </div>

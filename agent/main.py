@@ -35,6 +35,9 @@ from agent.registry import (
 )
 from agent.scope import Scope
 from agent.tools.browser import Browser
+from agent.tools import caido as caido_mod
+
+_CAIDO_TOOLS: set[str] = {"caido_history", "caido_create_finding"}
 
 
 class ScopeViolation(Exception):
@@ -147,16 +150,19 @@ class AgentSession:
                     planner.feed_rejection(action.tool, "tool not in registry")
                     continue
 
-                # Stateful tools (browser) take a separate path.
+                # Stateful tools take a separate path (bypass executor).
                 if action.tool in STATEFUL_TOOLS:
-                    try:
-                        await self._handle_browser_turn(planner, action)
-                    except ScopeViolation as exc:
-                        await self._send({
-                            "type": "error",
-                            "message": f"Scope violation: live page redirected to '{exc}'. Session halted.",
-                        })
-                        break
+                    if action.tool in _CAIDO_TOOLS:
+                        await self._handle_caido_turn(planner, action)
+                    else:
+                        try:
+                            await self._handle_browser_turn(planner, action)
+                        except ScopeViolation as exc:
+                            await self._send({
+                                "type": "error",
+                                "message": f"Scope violation: live page redirected to '{exc}'. Session halted.",
+                            })
+                            break
                     continue
 
                 # Render command from registry template
@@ -484,6 +490,113 @@ class AgentSession:
 
         planner.feed_result("browser", exit_code, stdout_text, stderr_text)
 
+    # ── Stateful: Caido ──────────────────────────────────────────────────────
+
+    async def _handle_caido_turn(self, planner: Planner, action: PlannerAction) -> None:
+        """Caido API tool turn: policy gates, then call Caido GraphQL."""
+        tool = action.tool
+        args = action.args or {}
+
+        # Determine targets for scope check
+        host = str(args.get("host", "") or args.get("host_filter", ""))
+        targets: list[str] = [host] if host else []
+        tier = Tier.RECON if tool == "caido_history" else Tier.EXPLOIT
+
+        slots = ", ".join(f"{k}={v!r}" for k, v in args.items() if k != "description")
+        rendered_cmd = f"caido.{tool}({slots})"
+
+        parsed = ParsedCommand(binary="caido", args=[tool], targets=targets,
+                               needs_root=False, tier=tier)
+        decision = evaluate(parsed, self.mode, self.scope, self.dry_run)
+
+        cmd_id = str(uuid.uuid4())
+        audit_id = await audit.command_log(
+            session_id=self.session_id,
+            tool=tool,
+            rendered_cmd=rendered_cmd,
+            tier=tier.value,
+            needs_root=False,
+            decision=decision.value,
+            targets=targets,
+            blocked_reason=_block_reason(parsed, self.mode, self.scope) if decision is Decision.BLOCK else None,
+        )
+        await self._send({
+            "type": "command_proposed",
+            "cmd_id": cmd_id,
+            "audit_id": audit_id,
+            "tool": tool,
+            "rendered": rendered_cmd,
+            "tier": tier.value,
+            "targets": targets,
+            "needs_root": False,
+            "decision": decision.value,
+            "rationale": action.rationale,
+            "dry_run": self.dry_run,
+        })
+
+        if decision is Decision.BLOCK:
+            reason = _block_reason(parsed, self.mode, self.scope)
+            await self._send({"type": "blocked", "cmd_id": cmd_id, "reason": reason})
+            planner.feed_rejection(tool, reason)
+            return
+
+        approved_by: str | None = None
+        if decision is Decision.NEEDS_APPROVAL:
+            await self._send({"type": "awaiting_approval", "cmd_id": cmd_id})
+            self._approval = asyncio.get_event_loop().create_future()
+            try:
+                approved = await asyncio.wait_for(self._approval, timeout=300.0)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                await self._send({"type": "error", "message": "Approval timed out."})
+                return
+            finally:
+                self._approval = None
+            if not approved:
+                planner.feed_rejection(tool, "rejected by operator")
+                return
+            approved_by = "operator"
+
+        t0 = time.monotonic()
+        stdout_text = stderr_text = ""
+        exit_code: int | None = None
+
+        if self.dry_run:
+            stdout_text = f"(dry-run) would {rendered_cmd}"
+        else:
+            try:
+                if tool == "caido_history":
+                    limit = int(args.get("limit", 50))
+                    rows = await caido_mod.history(limit=limit, host_filter=host)
+                    stdout_text = caido_mod.format_history_table(rows)
+                    exit_code = 0
+                elif tool == "caido_create_finding":
+                    result = await caido_mod.create_finding(
+                        request_id=str(args.get("request_id", "")),
+                        title=str(args.get("title", "Untitled Finding")),
+                        description=str(args.get("description", "")),
+                    )
+                    stdout_text = f"Finding created: {json.dumps(result, indent=2)}"
+                    exit_code = 0
+            except Exception as exc:
+                stderr_text = f"{type(exc).__name__}: {exc}"
+                exit_code = 1
+
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        stdout_hash = hashlib.sha256(stdout_text.encode()).hexdigest()
+        stderr_hash = hashlib.sha256(stderr_text.encode()).hexdigest()
+
+        if stdout_text:
+            await self._send({"type": "output_chunk", "cmd_id": cmd_id, "stream": "stdout", "data": stdout_text})
+            await audit.output_append(audit_id, "stdout", stdout_text)
+        if stderr_text:
+            await self._send({"type": "output_chunk", "cmd_id": cmd_id, "stream": "stderr", "data": stderr_text})
+            await audit.output_append(audit_id, "stderr", stderr_text)
+
+        await audit.command_done(audit_id, exit_code, duration_ms, stdout_hash, stderr_hash, approved_by)
+        await self._send({"type": "command_done", "cmd_id": cmd_id, "exit_code": exit_code,
+                          "duration_ms": duration_ms, "dry_run": self.dry_run})
+        planner.feed_result(tool, exit_code, stdout_text, stderr_text)
+
 
 def _render_browser_action(op: str, act: dict) -> str:
     if op == "goto":
@@ -624,6 +737,17 @@ async def export_session(session_id: str) -> dict:
     return {"markdown": "\n".join(lines)}
 
 
+@app.get("/api/caido/status")
+async def caido_status() -> dict:
+    alive = await caido_mod.alive()
+    return {
+        "alive": alive,
+        "url": caido_mod.CAIDO_URL,
+        "has_key": bool(caido_mod.CAIDO_API_KEY),
+        "proxy": caido_mod.CAIDO_PROXY or None,
+    }
+
+
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok", "version": "2.1.0"}
@@ -632,6 +756,13 @@ async def health() -> dict:
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
+    # Route all CLI subprocesses through Caido's intercept proxy when configured.
+    # This makes every tool call (curl, httpx, nuclei, etc.) visible in Caido's history.
+    if caido_proxy := caido_mod.CAIDO_PROXY:
+        os.environ.setdefault("HTTP_PROXY", caido_proxy)
+        os.environ.setdefault("HTTPS_PROXY", caido_proxy)
+        print(f"[ZWAN-AGENT] Caido proxy: all CLI tools → {caido_proxy}", flush=True)
+
     print(f"\n[ZWAN-AGENT] Token: {TOKEN}\n", flush=True)
     print(f"[ZWAN-AGENT] Listening on {_HOST}:{_PORT}", flush=True)
     uvicorn.run(app, host=_HOST, port=_PORT, log_level="warning")

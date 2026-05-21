@@ -305,10 +305,24 @@ REGISTRY: dict[str, ToolDef] = {
         extract=_no_targets,
         description="Stateful headless browser (DOM action loop)",
     ),
+    "caido_history": ToolDef(
+        binary="caido",
+        template=[],
+        tier=Tier.RECON,
+        extract=lambda args: _slot(args, "host", "host_filter"),
+        description="Pull HTTP history from Caido proxy for a host | slots: host, limit",
+    ),
+    "caido_create_finding": ToolDef(
+        binary="caido",
+        template=[],
+        tier=Tier.EXPLOIT,
+        extract=lambda args: _slot(args, "host"),
+        description="Create a Caido finding for a confirmed vulnerability | slots: request_id, title, description, host",
+    ),
 }
 
 
-STATEFUL_TOOLS: set[str] = {"browser"}
+STATEFUL_TOOLS: set[str] = {"browser", "caido_history", "caido_create_finding"}
 
 BROWSER_ACTIONS: set[str] = {
     "goto", "back", "extract", "screenshot",
