@@ -11,6 +11,14 @@ import asyncio
 import hashlib
 import json
 import os
+from pathlib import Path
+
+# Load .env from repo root before anything else reads os.environ
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent.parent / ".env")
+except ImportError:
+    pass
 import secrets
 import time
 import uuid
