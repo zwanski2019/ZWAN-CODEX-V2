@@ -7,6 +7,7 @@ import {
   Target, Code2, Key, Globe, Zap, Shield, Radio, Database, ScanLine,
   Play, Square, CheckCircle2, AlertTriangle, Wifi, WifiOff,
   ChevronDown, ChevronUp, Settings2,
+  Filter, FolderSearch, Network, Clock, Monitor,
 } from "lucide-react";
 
 const AGENT_WS   = process.env.NEXT_PUBLIC_AGENT_WS   ?? "ws://127.0.0.1:8788/ws";
@@ -44,7 +45,7 @@ const HUNTS = [
     color: "border-purple-500/40 bg-purple-500/5 text-purple-400",
     selColor: "border-purple-400 bg-purple-400/15 text-purple-300",
     goal: (t: string) =>
-      `Find all OAuth 2.0 and OIDC endpoints on ${t}. Test for PKCE stripping, redirect_uri bypass with double-encoded fragments, state fixation, and dynamic client registration abuse.`,
+      `Use browser to navigate ${t} and find all OAuth 2.0 and OIDC login flows. Use katana to crawl OAuth redirect chains. Test for PKCE stripping, redirect_uri bypass with double-encoded fragments (%2523), state fixation, and dynamic client registration abuse.`,
   },
   {
     id: "ssrf",
@@ -54,7 +55,7 @@ const HUNTS = [
     color: "border-pink-500/40 bg-pink-500/5 text-pink-400",
     selColor: "border-pink-400 bg-pink-400/15 text-pink-300",
     goal: (t: string) =>
-      `Find all URL parameters on ${t} that accept external URLs. Test each for SSRF. Target PDF generators, image processors, and webhook relay endpoints.`,
+      `Use katana depth 2 and gau to crawl ${t} and extract all URL parameters. Use curl to test each parameter that accepts a URL value for SSRF by pointing it at an out-of-band server. Target PDF generators, image processors, and webhook relay endpoints.`,
   },
   {
     id: "race",
@@ -64,7 +65,7 @@ const HUNTS = [
     color: "border-orange-500/40 bg-orange-500/5 text-orange-400",
     selColor: "border-orange-400 bg-orange-400/15 text-orange-300",
     goal: (t: string) =>
-      `Find financial, payment, transfer, withdrawal, and coupon endpoints on ${t}. Test for race conditions on state-changing operations that should execute only once.`,
+      `Use katana and gau to find payment, transfer, withdrawal, subscription, and coupon endpoints on ${t}. Send concurrent curl_post requests to test for race conditions on operations that should execute only once (double-spend, coupon reuse, duplicate transfer).`,
   },
   {
     id: "nuclei",
@@ -84,7 +85,7 @@ const HUNTS = [
     color: "border-rose-500/40 bg-rose-500/5 text-rose-400",
     selColor: "border-rose-400 bg-rose-400/15 text-rose-300",
     goal: (t: string) =>
-      `Test ${t} for HTTP request smuggling: CL.0, H2.CL, 0.CL, and client-side desync. Use differential response analysis to find vulnerable front-end/back-end configurations.`,
+      `Use curl with crafted Content-Length and Transfer-Encoding headers to test ${t} for HTTP request smuggling: CL.0, H2.CL, 0.CL, and client-side desync. Use differential response timing analysis to find vulnerable front-end/back-end proxy configurations.`,
   },
   {
     id: "caido",
@@ -105,6 +106,56 @@ const HUNTS = [
     selColor: "border-green-400 bg-green-400/15 text-green-300",
     goal: (t: string) =>
       `Full scope scan of ${t}: port scan with naabu, TLS inspection with tlsx, technology fingerprint with whatweb, DNS records with dnsx. Build a complete attack surface map.`,
+  },
+  {
+    id: "sqli",
+    label: "SQL Injection",
+    desc: "Find SQL injection in forms and URL parameters",
+    icon: Filter,
+    color: "border-violet-500/40 bg-violet-500/5 text-violet-400",
+    selColor: "border-violet-400 bg-violet-400/15 text-violet-300",
+    goal: (t: string) =>
+      `Use katana depth 3 and gau to crawl ${t} and collect all form parameters and URL parameters. Run sqlmap against each injectable parameter. Prioritize login forms, search boxes, numeric ID params, and order/filter endpoints. Report all confirmed injections with database name and proof.`,
+  },
+  {
+    id: "fuzz",
+    label: "Dir Fuzzing",
+    desc: "Find hidden files, admin panels and backup files",
+    icon: FolderSearch,
+    color: "border-teal-500/40 bg-teal-500/5 text-teal-400",
+    selColor: "border-teal-400 bg-teal-400/15 text-teal-300",
+    goal: (t: string) =>
+      `Use ffuf with a large common wordlist to fuzz directories and files on ${t}. Use gobuster_dir for recursive directory brute-force. Use gobuster_dns to enumerate DNS subdomains. Focus on backup files (.bak, .zip, .sql), admin panels (/admin, /dashboard, /manage), .git exposure, and config files.`,
+  },
+  {
+    id: "portscan",
+    label: "Port Scan",
+    desc: "Discover open ports and identify running services",
+    icon: Network,
+    color: "border-blue-500/40 bg-blue-500/5 text-blue-400",
+    selColor: "border-blue-400 bg-blue-400/15 text-blue-300",
+    goal: (t: string) =>
+      `Run naabu for fast port discovery across all 65535 ports on ${t}. Follow with nmap -sV for service version detection and OS fingerprinting on every open port. Use masscan for high-speed full-port coverage on the IP range. Report unusual services, exposed databases, and version-specific CVEs.`,
+  },
+  {
+    id: "historical",
+    label: "Historical Recon",
+    desc: "Mine Wayback Machine for old endpoints and leaks",
+    icon: Clock,
+    color: "border-indigo-500/40 bg-indigo-500/5 text-indigo-400",
+    selColor: "border-indigo-400 bg-indigo-400/15 text-indigo-300",
+    goal: (t: string) =>
+      `Use waybackurls to pull all archived URLs for ${t} from the Wayback Machine. Use gau for additional URL discovery from multiple sources. Check whois for domain registration history. Use dig for full DNS record enumeration. Look for old API endpoints, leaked credentials in URLs, deprecated admin panels, and forgotten subdomains.`,
+  },
+  {
+    id: "browse",
+    label: "Browser Crawl",
+    desc: "Navigate the site visually and map all functionality",
+    icon: Monitor,
+    color: "border-sky-500/40 bg-sky-500/5 text-sky-400",
+    selColor: "border-sky-400 bg-sky-400/15 text-sky-300",
+    goal: (t: string) =>
+      `Use browser to navigate ${t}, interact with the live site, and screenshot all key pages. Use katana for deep JavaScript-aware crawling. Map every user-facing feature, form submission, file upload, and API call. Look for unauthenticated functionality, hidden parameters, and client-side logic exposing sensitive operations.`,
   },
 ] as const;
 
