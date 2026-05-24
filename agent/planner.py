@@ -1,5 +1,5 @@
 """
-ReAct planner: Anthropic (claude-sonnet-4-6) with Ollama fallback.
+ReAct planner: Anthropic (claude-sonnet-4-6) → OpenRouter free → Ollama fallback.
 Emits one JSON action per turn. Never constructs prompts that include credentials.
 """
 from __future__ import annotations
@@ -134,20 +134,28 @@ class Planner:
         return "\n".join(parts) if parts else "No scope loaded."
 
     async def _call_llm(self, system: str, messages: list[dict]) -> str:
+        errors: list[str] = []
+
         try:
             return await _anthropic_call(system, messages)
-        except Exception as anthropic_err:
-            ollama_host = os.environ.get("OLLAMA_HOST", "")
-            if ollama_host:
-                try:
-                    return await _ollama_call(system, messages, ollama_host)
-                except Exception as ollama_err:
-                    raise RuntimeError(
-                        f"Both LLM backends failed.\n"
-                        f"Anthropic: {anthropic_err}\n"
-                        f"Ollama: {ollama_err}"
-                    )
-            raise
+        except Exception as e:
+            errors.append(f"Anthropic: {e}")
+
+        openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
+        if openrouter_key:
+            try:
+                return await _openrouter_call(system, messages, openrouter_key)
+            except Exception as e:
+                errors.append(f"OpenRouter: {e}")
+
+        ollama_host = os.environ.get("OLLAMA_HOST", "")
+        if ollama_host:
+            try:
+                return await _ollama_call(system, messages, ollama_host)
+            except Exception as e:
+                errors.append(f"Ollama: {e}")
+
+        raise RuntimeError("All LLM backends failed.\n" + "\n".join(errors))
 
 
 async def _anthropic_call(system: str, messages: list[dict]) -> str:
@@ -160,6 +168,35 @@ async def _anthropic_call(system: str, messages: list[dict]) -> str:
         messages=messages,
     )
     return resp.content[0].text
+
+
+_OPENROUTER_MODEL = os.environ.get(
+    "OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free"
+)
+
+
+async def _openrouter_call(system: str, messages: list[dict], api_key: str) -> str:
+    import httpx
+    payload = {
+        "model": _OPENROUTER_MODEL,
+        "max_tokens": 2048,
+        "response_format": {"type": "json_object"},
+        "messages": [{"role": "system", "content": system}, *messages],
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/zwanski2019/ZWAN-CODEX-V2",
+        "X-Title": "ZWAN-CODEX",
+    }
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        resp = await client.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            json=payload,
+            headers=headers,
+        )
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]["content"]
 
 
 async def _ollama_call(system: str, messages: list[dict], host: str) -> str:
